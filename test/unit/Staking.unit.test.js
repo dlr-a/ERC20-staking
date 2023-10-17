@@ -298,38 +298,27 @@ const { time } = require("@nomicfoundation/hardhat-network-helpers");
         it("lastStakeTime should update", async () => {
           await token.connect(owner).approve(stakingToken.getAddress(), amount);
           await stakingToken.connect(owner).stake(amount);
-          console.log("111111111111");
           const beforeClaim = await stakingToken
             .connect(owner)
             .getLastStakeTime(owner.address);
-          console.log(beforeClaim);
-          console.log("2222222222222");
           await time.increase(30);
           await stakingToken.connect(owner).claimReward();
 
           const afterClaim = await stakingToken
             .connect(owner)
             .getLastStakeTime(owner.address);
-          console.log(afterClaim);
-          console.log(typeof afterClaim);
-          console.log("33333333333");
           assert.notEqual(beforeClaim.toString(), afterClaim.toString());
         });
 
         it("total supply should decrease", async () => {
           await token.connect(owner).approve(stakingToken.getAddress(), amount);
           await stakingToken.connect(owner).stake(amount);
-          console.log("denemeeee");
 
           const beforeTotalSupply = await stakingToken.totalSupply();
-          console.log("beforeeeeeee", beforeTotalSupply);
           await time.increase(30);
           const earned = await stakingToken.earned(owner.address);
           await stakingToken.connect(owner).claimReward();
-          console.log("44444444");
-          console.log("EARNEDDDDD", earned);
           const afterTotalSupply = await stakingToken.totalSupply();
-          console.log("afterrrrr", afterTotalSupply);
 
           assert.equal(afterTotalSupply + earned, beforeTotalSupply);
         });

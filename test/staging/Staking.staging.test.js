@@ -41,42 +41,36 @@ developmentChains.includes(network.name)
         await stakeAccount.wait();
 
         //STAKE
-        console.log("STAKEEEEEEEEEE");
+        console.log("STAKE");
         const approve = await token
           .connect(owner)
           .approve(stakingToken.getAddress(), amount);
         await approve.wait();
         const stake = await stakingToken.connect(owner).stake(amount);
         await stake.wait();
-        const currentTime1 = (await ethers.provider.getBlock("latest"))
-          .timestamp;
         const userBalance = await stakingToken
           .connect(owner)
           .balanceOf(owner.address);
         assert.equal(amount.toString(), userBalance.toString());
 
         //GETLASTSTAKETIME
-        console.log("LAST STAKE TIMEEEEE");
+        console.log("LAST STAKE TIME");
         const stakeTime = await stakingToken
           .connect(owner)
           .getLastStakeTime(owner.address);
         assert.notEqual(0, stakeTime.toString());
 
-        console.log("Wait for period2...");
+        console.log("Wait...");
         await sleep(70000);
-        console.log("Time is over");
-        const currentTime2 = (await ethers.provider.getBlock("latest"))
-          .timestamp;
-        console.log(currentTime2 - currentTime1);
 
         //EARNED
-        console.log("EARNEDDDDDDDD");
+        console.log("EARNED");
         const earned = await stakingToken.earned(owner.address);
         const calculate = (Number(BigInt(userBalance)) * 2_000) / 10_000;
         assert.equal(earned.toString(), calculate.toString());
 
         //CLAIMREWARD
-        console.log("CLAIMREWARDDDDDDD");
+        console.log("CLAIMREWARD");
         const beforeClaimReward = await token
           .connect(owner)
           .balanceOf(owner.address);
@@ -91,13 +85,12 @@ developmentChains.includes(network.name)
         assert.equal(beforeClaimReward + earnedforClaim, afterClaimReward);
 
         //WITHDRAW
-        console.log("WITHDRAAAW");
+        console.log("WITHDRAW");
         const balance = await stakingToken.balanceOf(owner.address);
         const withdraw = await stakingToken.connect(owner).withdraw(balance);
         await withdraw.wait();
         const afterWithdraw = await stakingToken.balanceOf(owner.address);
         assert.equal(afterWithdraw.toString(), "0");
-        console.log("tamamlandı");
       });
     });
 
