@@ -7,6 +7,7 @@
     "@openzeppelin/contracts": "5.0",
     "console": "^0.7.2",
     "ethers-utils": "^2.1.11",
+    "flat": "5.0.1",
     "hardhat": "^2.17.4"
   },
   "devDependencies": {
