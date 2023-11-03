@@ -18,18 +18,16 @@ developmentChains.includes(network.name)
         account = account2;
 
         const Token = await ethers.getContractFactory("Token");
-        token = Token.attach("0x8b672Ed8dCcf66A803aFD167Cd854496FF7Ce417");
+        token = Token.attach("0xdeC37e363e3FA6eEaDDEa943939B2eFceA0CD658");
 
         const Staking = await ethers.getContractFactory("ERC20Staking");
         stakingToken = Staking.attach(
-          "0x851784e13D8803c5d7e13d410d611931B9380935"
+          "0xbFB6E0A0641FCDb0298386555F5EEbdeB9820E59"
         );
       });
 
       it("Staging test", async () => {
-        const transfer = await token
-          .connect(owner)
-          .transfer(account.address, amount);
+        const transfer = await token.transfer(account.address, amount);
         await transfer.wait();
 
         const approveAccount = await token
@@ -40,25 +38,17 @@ developmentChains.includes(network.name)
         const stakeAccount = await stakingToken.connect(account).stake(amount);
         await stakeAccount.wait();
 
+        // const unstakee = await stakingToken.unStake();
+        // await unstakee.wait();
+
         //STAKE
         console.log("STAKE");
-        const approve = await token
-          .connect(owner)
-          .approve(stakingToken.getAddress(), amount);
+        const approve = await token.approve(stakingToken.getAddress(), amount);
         await approve.wait();
-        const stake = await stakingToken.connect(owner).stake(amount);
+        const stake = await stakingToken.stake(amount);
         await stake.wait();
-        const userBalance = await stakingToken
-          .connect(owner)
-          .balanceOf(owner.address);
+        const userBalance = await stakingToken.balanceOf(owner.address);
         assert.equal(amount.toString(), userBalance.toString());
-
-        //GETLASTSTAKETIME
-        console.log("LAST STAKE TIME");
-        const stakeTime = await stakingToken
-          .connect(owner)
-          .getLastStakeTime(owner.address);
-        assert.notEqual(0, stakeTime.toString());
 
         console.log("Wait...");
         await sleep(70000);
@@ -69,28 +59,24 @@ developmentChains.includes(network.name)
         const calculate = (Number(BigInt(userBalance)) * 2_000) / 10_000;
         assert.equal(earned.toString(), calculate.toString());
 
-        //CLAIMREWARD
-        console.log("CLAIMREWARD");
-        const beforeClaimReward = await token
-          .connect(owner)
-          .balanceOf(owner.address);
-        const earnedforClaim = await stakingToken.earned(owner.address);
+        //HARVEST
+        console.log("HARVEST");
+        const beforeHarvest = await token.balanceOf(owner.address);
+        const earnedForHarvest = await stakingToken.earned(owner.address);
 
-        const claimReward = await stakingToken.connect(owner).claimReward();
-        await claimReward.wait();
+        const harvest = await stakingToken.harvest();
+        await harvest.wait();
 
-        const afterClaimReward = await token
-          .connect(owner)
-          .balanceOf(owner.address);
-        assert.equal(beforeClaimReward + earnedforClaim, afterClaimReward);
+        const afterHarvest = await token.balanceOf(owner.address);
+        assert.equal(beforeHarvest + earnedForHarvest, afterHarvest);
 
-        //WITHDRAW
-        console.log("WITHDRAW");
-        const balance = await stakingToken.balanceOf(owner.address);
-        const withdraw = await stakingToken.connect(owner).withdraw(balance);
-        await withdraw.wait();
-        const afterWithdraw = await stakingToken.balanceOf(owner.address);
-        assert.equal(afterWithdraw.toString(), "0");
+        //UNSTAKE
+        console.log("UNSTAKE");
+        const unstake = await stakingToken.unStake();
+        await unstake.wait();
+        const afterUnstake = await stakingToken.balanceOf(owner.address);
+        assert.equal(afterUnstake.toString(), "0");
+        console.log(afterUnstake);
       });
     });
 

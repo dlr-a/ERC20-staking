@@ -4,7 +4,7 @@
   "main": "index.js",
   "license": "MIT",
   "dependencies": {
-    "@openzeppelin/contracts": "^4.9.3",
+    "@openzeppelin/contracts": "5.0",
     "console": "^0.7.2",
     "ethers-utils": "^2.1.11",
     "hardhat": "^2.17.4"

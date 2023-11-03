@@ -5,6 +5,10 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "hardhat/console.sol";
 
+error TransactionFailed(address _address);
+error InvalidAddress(address _address);
+error RewardIsZero();
+
 contract ERC20Staking is Ownable {
     IERC20 public immutable stakingToken;
 
@@ -17,70 +21,70 @@ contract ERC20Staking is Ownable {
     uint256 public constant REWARD_RATE_3 = 3_000;
     uint256 public constant BP = 10_000;
 
-    uint256 public totalSupply;
-
-    mapping(address => uint256) public rewards;
     mapping(address => uint256) public balanceOf;
-    mapping(address => uint256) public lastStakeTime;
+    mapping(address => uint256) public updatedAt;
 
     event Staked(address indexed user, uint256 amount);
-    event Withdraw(address indexed user, uint256 amount);
-    event RewardPaid(address indexed user, uint256 reward);
+    event UnStaked(address indexed user, uint256 reward, uint256 withdraw);
 
-    constructor(address _stakingToken) {
-        require(
-            _stakingToken != address(0),
-            "Token address can't be address zero"
-        );
+    constructor(address _stakingToken) Ownable(msg.sender) {
+        if (_stakingToken == address(0)) {
+            revert InvalidAddress(address(0));
+        }
         stakingToken = IERC20(_stakingToken);
     }
 
-    function getLastStakeTime(address _account) public view returns (uint256) {
-        return lastStakeTime[_account];
-    }
-
-    function earned(address _account) public view returns (uint256 userReward) {
-        if (block.timestamp - lastStakeTime[_account] >= stakingPeriod3) {
-            userReward = (balanceOf[_account] * REWARD_RATE_3) / BP;
-        } else if (
-            block.timestamp - lastStakeTime[_account] >= stakingPeriod2
-        ) {
-            userReward = (balanceOf[_account] * REWARD_RATE_2) / BP;
-        } else if (
-            block.timestamp - lastStakeTime[_account] >= stakingPeriod1
-        ) {
-            userReward = (balanceOf[_account] * REWARD_RATE_1) / BP;
-        } else {
-            userReward = 0;
+    function earned(address _account) public view returns (uint256) {
+        if (_account == address(0)) {
+            revert InvalidAddress(address(0));
         }
+        uint256 userStakingTime = block.timestamp - updatedAt[_account];
+        uint256 rewardRate;
+
+        if (userStakingTime >= stakingPeriod3) {
+            rewardRate = REWARD_RATE_3;
+        } else if (userStakingTime >= stakingPeriod2) {
+            rewardRate = REWARD_RATE_2;
+        } else if (userStakingTime >= stakingPeriod1) {
+            rewardRate = REWARD_RATE_1;
+        }
+
+        if (rewardRate == 0) return 0;
+
+        return (balanceOf[_account] * rewardRate) / BP;
     }
 
     function stake(uint _amount) external {
+        if (balanceOf[msg.sender] != 0) {
+            uint256 userReward = earned(msg.sender);
+            stakingToken.transfer(msg.sender, userReward);
+        }
         require(_amount > 0, "amount = 0");
         stakingToken.transferFrom(msg.sender, address(this), _amount);
         balanceOf[msg.sender] += _amount;
-        totalSupply += _amount;
-        lastStakeTime[msg.sender] = block.timestamp;
+        updatedAt[msg.sender] = block.timestamp;
         emit Staked(msg.sender, _amount);
     }
 
-    function withdraw(uint _amount) external {
-        require(_amount > 0, "amount = 0");
-        require(balanceOf[msg.sender] >= _amount, "Insufficient staked amount");
-        balanceOf[msg.sender] -= _amount;
-        totalSupply -= _amount;
-        stakingToken.transfer(msg.sender, _amount);
-        emit Withdraw(msg.sender, _amount);
+    function unStake() external {
+        uint256 reward = earned(msg.sender);
+        if (reward > 0) {
+            stakingToken.transfer(msg.sender, reward);
+        }
+        delete updatedAt[msg.sender];
+        uint256 balance = balanceOf[msg.sender];
+        stakingToken.transfer(msg.sender, balance);
+        delete balanceOf[msg.sender];
+        emit UnStaked(msg.sender, reward, balance);
     }
 
-    function claimReward() external {
-        rewards[msg.sender] = earned(msg.sender);
-        uint256 reward = rewards[msg.sender];
-        require(reward > 0, "reward should bigger than zero");
-        delete rewards[msg.sender];
-        lastStakeTime[msg.sender] = block.timestamp;
-        stakingToken.transfer(msg.sender, reward);
-        totalSupply -= reward;
-        emit RewardPaid(msg.sender, reward);
+    function harvest() external {
+        uint256 reward = earned(msg.sender);
+        if (reward > 0) {
+            stakingToken.transfer(msg.sender, reward);
+            updatedAt[msg.sender] = block.timestamp;
+        } else {
+            revert RewardIsZero();
+        }
     }
 }

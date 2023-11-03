@@ -30,78 +30,94 @@ const { time } = require("@nomicfoundation/hardhat-network-helpers");
 
       describe("constructor", () => {
         it("Should revert when setting token address to the zero address", async () => {
-          await expect(StakingToken.deploy(addressZero)).to.be.revertedWith(
-            "Token address can't be address zero"
-          );
+          await expect(StakingToken.deploy(addressZero))
+            .to.be.revertedWithCustomError(stakingToken, "InvalidAddress")
+            .withArgs(addressZero);
         });
       });
 
       describe("Stake", () => {
-        it("amount can't be zero", async () => {
-          await expect(stakingToken.connect(owner).stake(0)).to.be.revertedWith(
-            "amount = 0"
-          );
-        });
-
-        it("staking contract balance should be bigger than amount", async () => {
-          await expect(
-            stakingToken.connect(account).stake(amount)
-          ).to.be.revertedWith("ERC20: insufficient allowance");
-        });
-
-        it("user should allow", async () => {
-          await expect(
-            stakingToken.connect(owner).stake(amount)
-          ).to.be.revertedWith("ERC20: insufficient allowance");
-        });
-
-        it("balanceOf should increase", async () => {
+        it("give reward when user already stakes", async () => {
           const newAmount = amount * 2;
           await token
             .connect(owner)
             .approve(stakingToken.getAddress(), newAmount);
-          await stakingToken.connect(owner).stake(amount);
-          const beforeBalanceOf = await stakingToken.balanceOf(owner.address);
-          await stakingToken.connect(owner).stake(amount);
-          const afterBalanceOf = await stakingToken.balanceOf(owner.address);
-          console.log(
-            await token.connect(owner).balanceOf(stakingToken.getAddress())
+          await stakingToken.stake(amount);
+          await time.increase(50);
+          const beforeUserBalance = await token.balanceOf(owner.address);
+          const earned = await stakingToken.earned(owner.address);
+          await stakingToken.stake(amount);
+          const afterUserBalance = await token.balanceOf(owner.address);
+          assert.equal(
+            beforeUserBalance,
+            Number(afterUserBalance) + (amount - Number(earned))
           );
+        });
+
+        it("amount can't be zero", async () => {
+          await expect(stakingToken.stake(0)).to.be.revertedWith("amount = 0");
+        });
+
+        it("user balance should be bigger than amount", async () => {
+          await token
+            .connect(account)
+            .approve(stakingToken.getAddress(), amount);
+          const balance = await token.balanceOf(account.address);
+          await expect(stakingToken.connect(account).stake(amount))
+            .to.be.revertedWithCustomError(token, "ERC20InsufficientBalance")
+            .withArgs(account.address, balance, amount);
+        });
+
+        it("user should allow", async () => {
+          const allowance = await token.allowance(
+            owner.address,
+            stakingToken.getAddress()
+          );
+          const address = await stakingToken.getAddress();
+          await expect(stakingToken.stake(amount))
+            .to.be.revertedWithCustomError(token, "ERC20InsufficientAllowance")
+            .withArgs(address, allowance, amount);
+        });
+
+        it("balanceOf should increase", async () => {
+          const newAmount = amount * 2;
+          await token.approve(stakingToken.getAddress(), newAmount);
+          await stakingToken.stake(amount);
+          const beforeBalanceOf = await stakingToken.balanceOf(owner.address);
+          await stakingToken.stake(amount);
+          const afterBalanceOf = await stakingToken.balanceOf(owner.address);
           assert.equal(Number(afterBalanceOf) - amount, beforeBalanceOf);
         });
 
-        it("totalSupply should increase", async () => {
-          await token.connect(owner).approve(stakingToken.getAddress(), amount);
-          await stakingToken.connect(owner).stake(amount);
-          const totalSupply = await stakingToken.totalSupply();
-          assert.equal(amount.toString(), totalSupply.toString());
+        it("contract balance should increase", async () => {
+          await token.approve(stakingToken.getAddress(), amount);
+          await stakingToken.stake(amount);
+          const contractBalance = await token.balanceOf(
+            stakingToken.getAddress()
+          );
+          assert.equal(amount.toString(), contractBalance.toString());
         });
 
-        it("reward should increase", async () => {
-          await token.connect(owner).approve(stakingToken.getAddress(), amount);
-          const beforeStake = await stakingToken.earned(owner.address);
-          await stakingToken.connect(owner).stake(amount);
-          await time.increase(50);
-          const afterStake = await stakingToken.earned(owner.address);
-          assert.notEqual(beforeStake, afterStake);
+        it("user token balance should decrease", async () => {
+          const beforeUserBalance = await token.balanceOf(owner.address);
+          await token.approve(stakingToken.getAddress(), amount);
+          await stakingToken.stake(amount);
+          const afterUserBalance = await token.balanceOf(owner.address);
+          assert.equal(Number(afterUserBalance) + amount, beforeUserBalance);
         });
 
-        it("stakeTime should work", async () => {
-          await token.connect(owner).approve(stakingToken.getAddress(), amount);
-          const beforeStake = await stakingToken
-            .connect(owner)
-            .getLastStakeTime(owner.address);
-          await stakingToken.connect(owner).stake(amount);
+        it("updatedAt should update", async () => {
+          await token.approve(stakingToken.getAddress(), amount);
+          const beforeStake = await stakingToken.updatedAt(owner.address);
+          await stakingToken.stake(amount);
           await time.increase(10);
-          const afterStake = await stakingToken
-            .connect(owner)
-            .getLastStakeTime(owner.address);
+          const afterStake = await stakingToken.updatedAt(owner.address);
           assert.notEqual(beforeStake, afterStake);
         });
 
         it("should emit stake event with correct data", async () => {
-          await token.connect(owner).approve(stakingToken.getAddress(), amount);
-          const stake = await stakingToken.connect(owner).stake(amount);
+          await token.approve(stakingToken.getAddress(), amount);
+          const stake = await stakingToken.stake(amount);
 
           await expect(stake)
             .to.emit(stakingToken, "Staked")
@@ -109,59 +125,148 @@ const { time } = require("@nomicfoundation/hardhat-network-helpers");
         });
       });
 
-      describe("withdraw", () => {
-        it("amount can't be zero", async () => {
-          await token.connect(owner).approve(stakingToken.getAddress(), amount);
-          expect(stakingToken.connect(owner).stake(0)).to.be.revertedWith(
-            "amount = 0"
-          );
-        });
-
+      describe("unStake", () => {
         it("balanceOf should decrease", async () => {
-          const newAmount = amount * 2;
-          await token
-            .connect(owner)
-            .approve(stakingToken.getAddress(), newAmount);
-          await stakingToken.connect(owner).stake(newAmount);
+          await token.connect(owner).approve(stakingToken.getAddress(), amount);
+          await stakingToken.connect(owner).stake(amount);
           const beforeBalanceOf = await stakingToken.balanceOf(owner.address);
-          await stakingToken.connect(owner).withdraw(amount);
+          await stakingToken.connect(owner).unStake();
           const afterBalanceOf = await stakingToken.balanceOf(owner.address);
           assert.equal(Number(afterBalanceOf) + amount, beforeBalanceOf);
         });
 
-        it("totalSupply should decrease", async () => {
-          const newAmount = amount * 2;
+        it("contract balance should decrease", async () => {
+          await token.connect(owner).approve(stakingToken.getAddress(), amount);
+          await stakingToken.connect(owner).stake(amount);
+          const beforeContractBalance = await token.balanceOf(
+            stakingToken.getAddress()
+          );
+          await stakingToken.connect(owner).unStake();
+          const afterContractBalance = await token.balanceOf(
+            stakingToken.getAddress()
+          );
+          assert.equal(
+            Number(afterContractBalance) + amount,
+            beforeContractBalance
+          );
+        });
+
+        it("should emit unstake event with correct data", async () => {
+          await token.connect(owner).transfer(account.address, amount);
           await token
-            .connect(owner)
-            .approve(stakingToken.getAddress(), newAmount);
-          await stakingToken.connect(owner).stake(newAmount);
-          const beforeTotalSupply = await stakingToken.totalSupply();
-          await stakingToken.connect(owner).withdraw(amount);
-          const afterTotalSupply = await stakingToken.totalSupply();
-          assert.equal(Number(afterTotalSupply) + amount, beforeTotalSupply);
-        });
+            .connect(account)
+            .approve(stakingToken.getAddress(), amount);
+          await stakingToken.connect(account).stake(amount);
 
-        it("amount cant be bigger than balance", async () => {
-          const newAmount = amount * 2;
           await token.connect(owner).approve(stakingToken.getAddress(), amount);
           await stakingToken.connect(owner).stake(amount);
+          await time.increase(30);
+          const reward = await stakingToken.earned(owner.address);
+          const unStake = await stakingToken.connect(owner).unStake();
+
+          await expect(unStake)
+            .to.emit(stakingToken, "UnStaked")
+            .withArgs(owner.address, reward, amount);
+        });
+
+        it("should give reward", async () => {
+          await token.connect(owner).transfer(account.address, amount);
+          await token
+            .connect(account)
+            .approve(stakingToken.getAddress(), amount);
+          await stakingToken.connect(account).stake(amount);
+
+          await token.connect(owner).approve(stakingToken.getAddress(), amount);
+          await stakingToken.connect(owner).stake(amount);
+          const beforeUserBalance = await token.balanceOf(owner.address);
+          await time.increase(30);
+
+          const reward = await stakingToken.earned(owner.address);
+          await stakingToken.connect(owner).unStake();
+          const afterUserBalance = await token.balanceOf(owner.address);
+
+          assert.equal(
+            Number(beforeUserBalance) + Number(reward) + amount,
+            Number(afterUserBalance)
+          );
+        });
+
+        it("revert when contract balance is not enough", async () => {
+          await token.connect(owner).approve(stakingToken.getAddress(), amount);
+          await stakingToken.connect(owner).stake(amount);
+          const balance = await token.balanceOf(stakingToken.getAddress());
+          await time.increase(30);
+          const reward = await stakingToken.earned(owner.address);
+          const address = await stakingToken.getAddress();
+
+          await expect(stakingToken.connect(owner).unStake())
+            .to.be.revertedWithCustomError(token, "ERC20InsufficientBalance")
+            .withArgs(address, balance - reward, amount);
+          //contract balance is enough for reward and gives the reward to user.
+          //but not enough for users stake amount
+        });
+
+        it("should delete updatedAt", async () => {
+          await token.connect(owner).approve(stakingToken.getAddress(), amount);
+          await stakingToken.connect(owner).stake(amount);
+
+          await stakingToken.connect(owner).unStake();
+          const updatedAt = await stakingToken.updatedAt(owner.address);
+          assert.equal(0, updatedAt);
+        });
+
+        it("when reward is zero", async () => {
+          await token.connect(owner).approve(stakingToken.getAddress(), amount);
+          await stakingToken.connect(owner).stake(amount);
+          const beforeUserBalance = await token.balanceOf(owner.address);
+
+          await stakingToken.connect(owner).unStake();
+          const afterUserBalance = await token.balanceOf(owner.address);
+
+          assert.equal(Number(beforeUserBalance) + amount, afterUserBalance);
+        });
+      });
+
+      describe("harvest", () => {
+        it("harvest works", async () => {
+          await token.connect(owner).approve(stakingToken.getAddress(), amount);
+          await stakingToken.connect(owner).stake(amount);
+          await time.increase(30);
+
+          const beforeOwnerBalance = await token.balanceOf(owner.address);
+          const earned = await stakingToken.earned(owner.address);
+          await stakingToken.connect(owner).harvest();
+          const afterOwnerBalance = await token.balanceOf(owner.address);
+          assert.equal(afterOwnerBalance, beforeOwnerBalance + earned);
+        });
+
+        it("harvest should update updatedAt", async () => {
+          await token.connect(owner).approve(stakingToken.getAddress(), amount);
+          await stakingToken.connect(owner).stake(amount);
+          const beforeUpdatedAt = await stakingToken.updatedAt(owner.address);
+          await time.increase(30);
+          await stakingToken.connect(owner).harvest();
+          const afterUpdatedAt = await stakingToken.updatedAt(owner.address);
+          assert.notEqual(beforeUpdatedAt, afterUpdatedAt);
+        });
+
+        it("should revert when reward is zero", async () => {
+          await token.connect(owner).approve(stakingToken.getAddress(), amount);
+          await stakingToken.connect(owner).stake(amount);
+
           await expect(
-            stakingToken.connect(owner).withdraw(newAmount)
-          ).to.be.revertedWith("Insufficient staked amount");
-        });
-
-        it("should emit withdraw event with correct data", async () => {
-          await token.connect(owner).approve(stakingToken.getAddress(), amount);
-          await stakingToken.connect(owner).stake(amount);
-          const withdraw = await stakingToken.connect(owner).withdraw(amount);
-
-          await expect(withdraw)
-            .to.emit(stakingToken, "Withdraw")
-            .withArgs(owner.address, amount);
+            stakingToken.connect(owner).harvest()
+          ).to.be.revertedWithCustomError(stakingToken, "RewardIsZero");
         });
       });
 
       describe("earned", () => {
+        it("account cant be address zero", async () => {
+          await expect(stakingToken.earned(addressZero))
+            .to.be.revertedWithCustomError(stakingToken, "InvalidAddress")
+            .withArgs(addressZero);
+        });
+
         it("should calculate true for stakingPeriod1", async () => {
           await token.connect(owner).approve(stakingToken.getAddress(), amount);
           await stakingToken.connect(owner).stake(amount);
@@ -234,105 +339,10 @@ const { time } = require("@nomicfoundation/hardhat-network-helpers");
         it("should calculate for zero reward", async () => {
           await token.connect(owner).approve(stakingToken.getAddress(), amount);
           await stakingToken.connect(owner).stake(amount);
-          const currentTime1 = (await ethers.provider.getBlock("latest"))
-            .timestamp;
-
           await time.increase(3);
-
-          const currentTime2 = (await ethers.provider.getBlock("latest"))
-            .timestamp;
 
           const earned = await stakingToken.earned(owner.address);
           assert.equal(0, earned.toString());
-        });
-      });
-
-      describe("claimReward", () => {
-        it("claimReward should work", async () => {
-          await token.connect(owner).approve(stakingToken.getAddress(), amount);
-          await stakingToken.connect(owner).stake(amount);
-
-          const beforeUserBalance = await token.balanceOf(owner.address);
-
-          await time.increase(365);
-          const earned = await stakingToken.earned(owner.address);
-          await stakingToken.connect(owner).claimReward();
-          const afterUserBalance = await token.balanceOf(owner.address);
-          assert.equal(beforeUserBalance + earned, afterUserBalance);
-        });
-
-        it("totalSupply is not enough", async () => {
-          const newAmount = 900;
-          await token
-            .connect(owner)
-            .approve(stakingToken.getAddress(), newAmount);
-          await stakingToken.connect(owner).stake(newAmount);
-
-          await token.connect(owner).transfer(account.address, amount);
-
-          await token
-            .connect(account)
-            .approve(stakingToken.getAddress(), amount);
-          await stakingToken.connect(account).stake(99);
-
-          await time.increase(30);
-
-          await stakingToken.connect(owner).claimReward();
-          await stakingToken.connect(owner).withdraw(newAmount);
-
-          await time.increase(365);
-          await expect(
-            stakingToken.connect(account).claimReward()
-          ).to.be.revertedWith("ERC20: transfer amount exceeds balance");
-        });
-
-        it("reward should bigger than zero", async () => {
-          await token.connect(owner).approve(stakingToken.getAddress(), amount);
-          await stakingToken.connect(owner).stake(amount);
-
-          await expect(
-            stakingToken.connect(owner).claimReward()
-          ).to.be.revertedWith("reward should bigger than zero");
-        });
-
-        it("lastStakeTime should update", async () => {
-          await token.connect(owner).approve(stakingToken.getAddress(), amount);
-          await stakingToken.connect(owner).stake(amount);
-          const beforeClaim = await stakingToken
-            .connect(owner)
-            .getLastStakeTime(owner.address);
-          await time.increase(30);
-          await stakingToken.connect(owner).claimReward();
-
-          const afterClaim = await stakingToken
-            .connect(owner)
-            .getLastStakeTime(owner.address);
-          assert.notEqual(beforeClaim.toString(), afterClaim.toString());
-        });
-
-        it("total supply should decrease", async () => {
-          await token.connect(owner).approve(stakingToken.getAddress(), amount);
-          await stakingToken.connect(owner).stake(amount);
-
-          const beforeTotalSupply = await stakingToken.totalSupply();
-          await time.increase(30);
-          const earned = await stakingToken.earned(owner.address);
-          await stakingToken.connect(owner).claimReward();
-          const afterTotalSupply = await stakingToken.totalSupply();
-
-          assert.equal(afterTotalSupply + earned, beforeTotalSupply);
-        });
-
-        it("should emit RewardPaid event with correct data", async () => {
-          await token.connect(owner).approve(stakingToken.getAddress(), amount);
-          await stakingToken.connect(owner).stake(amount);
-          await time.increase(30);
-          const reward = await stakingToken.earned(owner.address);
-          const claimReward = await stakingToken.connect(owner).claimReward();
-
-          await expect(claimReward)
-            .to.emit(stakingToken, "RewardPaid")
-            .withArgs(owner.address, reward);
         });
       });
     });
